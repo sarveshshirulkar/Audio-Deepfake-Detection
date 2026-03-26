@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Audio Deepfake Detector — Local</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+  <body class="bg-slate-50 min-h-screen flex items-center justify-center p-6">
+    <div class="max-w-2xl w-full bg-white shadow-lg rounded-2xl p-6">
+      <h1 class="text-2xl font-semibold mb-2">Audio Deepfake Detector</h1>
+      <p class="text-sm text-slate-500 mb-4"> Upload an audio file (wav, mp3). The app will tell you whether the audio is likely <strong>fake</strong> or <strong>real</strong>.</p>
+
+      <div id="drop" class="border-2 border-dashed border-slate-200 rounded-xl p-6 text-center cursor-pointer hover:border-slate-300 transition">
+        <svg class="mx-auto mb-3" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/></svg>
+        <div class="text-slate-600 mb-3">Drag & drop audio here, or</div>
+        <button id="chooseBtn" class="px-4 py-2 bg-slate-800 text-white rounded-lg">Choose file</button>
+        <input id="fileInput" type="file" accept="audio/*" class="hidden" />
+        <div id="fname" class="mt-3 text-sm text-slate-500"></div>
+      </div>
+
+      <div id="playerArea" class="mt-6 hidden">
+        <audio id="audioPlayer" controls class="w-full mb-3"></audio>
+        <div class="flex items-center gap-3">
+          <div id="resultBadge" class="px-3 py-2 rounded-full text-white font-medium"></div>
+          <div id="confidence" class="text-sm text-slate-600"></div>
+        </div>
+      </div>
+
+      <div id="spinner" class="mt-6 hidden">
+        <div class="flex items-center gap-3">
+          <div class="loader ease-linear rounded-full border-4 border-t-4 border-slate-200 h-8 w-8"></div>
+          <div class="text-sm text-slate-600">Analyzing...</div>
+        </div>
+      </div>
+
+      <div id="error" class="mt-4 text-sm text-red-600"></div>
+
+      <!-- <div class="mt-6 text-xs text-slate-400">
+        Note: This runs entirely on your machine. The model expects 5s audio at 16 kHz. If results look off, tune THRESHOLD in <code>app.py</code>.
+      </div> -->
+    </div>
+
+    <script>
+      const fileInput = document.getElementById('fileInput');
+      const chooseBtn = document.getElementById('chooseBtn');
+      const drop = document.getElementById('drop');
+      const fname = document.getElementById('fname');
+      const spinner = document.getElementById('spinner');
+      const playerArea = document.getElementById('playerArea');
+      const audioPlayer = document.getElementById('audioPlayer');
+      const resultBadge = document.getElementById('resultBadge');
+      const confidenceDiv = document.getElementById('confidence');
+      const errorDiv = document.getElementById('error');
+
+      chooseBtn.addEventListener('click', () => fileInput.click());
+      fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
+
+      ;['dragenter','dragover'].forEach(ev => {
+        drop.addEventListener(ev, (e) => {
+          e.preventDefault(); e.stopPropagation();
+          drop.classList.add('border-slate-400','bg-slate-50');
+        });
+      });
+      ;['dragleave','drop'].forEach(ev => {
+        drop.addEventListener(ev, (e) => {
+          e.preventDefault(); e.stopPropagation();
+          drop.classList.remove('border-slate-400','bg-slate-50');
+        });
+      });
+
+      drop.addEventListener('drop', (e) => {
+        const dt = e.dataTransfer;
+        if (dt && dt.files && dt.files.length) handleFiles(dt.files);
+      });
+
+      function handleFiles(files) {
+        errorDiv.textContent = '';
+        const file = files[0];
+        if (!file) return;
+        fname.textContent = file.name + " — " + Math.round(file.size / 1024) + " KB";
+
+        const objectUrl = URL.createObjectURL(file);
+        audioPlayer.src = objectUrl;
+        playerArea.classList.remove('hidden');
+
+        uploadFile(file);
+      }
+
+      async function uploadFile(file) {
+        spinner.classList.remove('hidden');
+        resultBadge.style.display = 'none';
+        confidenceDiv.textContent = '';
+        errorDiv.textContent = '';
+
+        const form = new FormData();
+        form.append('file', file);
+
+        try {
+          const resp = await fetch('/predict', {
+            method: 'POST',
+            body: form
+          });
+          const data = await resp.json();
+          spinner.classList.add('hidden');
+
+          if (!resp.ok) {
+            errorDiv.textContent = data.error || ('Server error: ' + resp.status);
+            return;
+          }
+
+          if (data.error) {
+            errorDiv.textContent = data.error;
+            return;
+          }
+
+          const label = data.label;
+          const conf = data.confidence !== undefined ? data.confidence : null;
+          if (label === 'fake') {
+            resultBadge.textContent = 'FAKE';
+            resultBadge.style.backgroundColor = '#ef4444';
+          } else {
+            resultBadge.textContent = 'REAL';
+            resultBadge.style.backgroundColor = '#10b981';
+          }
+          resultBadge.style.display = 'inline-block';
+          confidenceDiv.textContent = conf !== null ? `Confidence: ${Math.round(conf * 100)}%` : '';
+        } catch (err) {
+          spinner.classList.add('hidden');
+          errorDiv.textContent = 'Network or server error: ' + err.message;
+        }
+      }
+    </script>
+    <style>
+      .loader {
+        border-top-color: rgba(0,0,0,0.6);
+        animation: spin 0.8s linear infinite;
+      }
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+    </style>
+  </body>
+</html>

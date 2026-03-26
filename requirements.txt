@@ -1,0 +1,6 @@
+Flask
+torch 
+librosa
+soundfile
+numpy
+transformers
